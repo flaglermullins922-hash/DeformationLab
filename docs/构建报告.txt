@@ -1,0 +1,5 @@
+﻿[DeformationTools] 构建报告
+结果: Succeeded
+错误: 0  警告: 0
+大小: 67.3 MB
+输出: D:/un/DeformationLab_Build/DeformationLab.exe
