@@ -110,27 +110,29 @@ namespace DeformationLab
         static void AddBoxSide(List<Vector3> verts, List<Vector3> normals, List<Vector2> uvs,
                                List<Color> colors, List<int> tris, float hx, float hy, float hz, int segY)
         {
-            // 4 个侧面，每个面是 (segY+1) 层 × 2 列；再加顶、底面
-            var sides = new (Vector3 n, Vector3 a, Vector3 b)[]
+            // 4 个侧面，每个面是 (segY+1) 层 × 2 列；再加顶、底面。
+            // 每个面显式给出：法线 n、u=0 起点的角 origin、横向轴 uAxis（已含面宽，指向 u=1 端）。
+            // 顶点 P(u,v) = origin + uAxis*u + up*(v/segY * 2hy)。
+            // 三角形绕序 (a,c,b)/(b,c,d) 恒满足 up × uAxis = -n，即面朝外（Unity 顺时针为正面）。
+            // 旧实现用 Cross(n, up) 推横向方向，方向与起点角 origin 不配套，导致 -X/+Z/-Z
+            // 三个侧面顶点飞出包围盒、绕序也反 → 立方体散成不封闭的面。这里改成显式枚举。
+            var sides = new (Vector3 n, Vector3 origin, Vector3 uAxis)[]
             {
-                (Vector3.right,   new Vector3( hx,-hy, hz), new Vector3( hx, hy, hz)), // +X  (b-a 沿 +Y)
-                (Vector3.left,    new Vector3(-hx,-hy,-hz), new Vector3(-hx, hy,-hz)), // -X
-                (Vector3.forward, new Vector3(-hx,-hy, hz), new Vector3(-hx, hy, hz)), // +Z
-                (Vector3.back,    new Vector3( hx,-hy,-hz), new Vector3( hx, hy,-hz)), // -Z
+                (Vector3.right,   new Vector3( hx, -hy,  hz), new Vector3( 0f, 0f, -2f * hz)), // +X
+                (Vector3.left,    new Vector3(-hx, -hy, -hz), new Vector3( 0f, 0f,  2f * hz)), // -X
+                (Vector3.forward, new Vector3(-hx, -hy,  hz), new Vector3( 2f * hx, 0f, 0f)), // +Z
+                (Vector3.back,    new Vector3( hx, -hy, -hz), new Vector3(-2f * hx, 0f, 0f)), // -Z
             };
+
             foreach (var s in sides)
             {
                 int start = verts.Count;
-                Vector3 edge = s.b - s.a;              // 沿 Y 的边
-                Vector3 across = Vector3.Cross(s.n, Vector3.up).normalized; // 面的横向
-                // 横向长度 = 面的宽（±X 面宽 = 2hz，±Z 面宽 = 2hx）
-                float width = s.n.x != 0 ? 2f * hz : 2f * hx;
                 for (int v = 0; v <= segY; v++)
                 {
                     float tv = (float)v / segY;
                     for (int u = 0; u <= 1; u++)
                     {
-                        Vector3 p = s.a + Vector3.up * (tv * 2f * hy) + across * (u * width);
+                        Vector3 p = s.origin + s.uAxis * u + Vector3.up * (tv * 2f * hy);
                         verts.Add(p);
                         normals.Add(s.n);
                         uvs.Add(new Vector2((float)u, tv));
@@ -138,22 +140,22 @@ namespace DeformationLab
                     }
                 }
                 for (int v = 0; v < segY; v++)
-                    for (int u = 0; u < 1; u++)
-                    {
-                        int a = start + v * 2 + u, b = a + 1, c = a + 2, d = c + 1;
-                        tris.Add(a); tris.Add(c); tris.Add(b);
-                        tris.Add(b); tris.Add(c); tris.Add(d);
-                    }
+                {
+                    int a = start + v * 2, b = a + 1, c = a + 2, d = c + 1;
+                    tris.Add(a); tris.Add(c); tris.Add(b);
+                    tris.Add(b); tris.Add(c); tris.Add(d);
+                }
             }
+
             // 顶面、底面（各 4 顶点 quad）
-            AddFlatQuad(verts, normals, uvs, colors, tris, new Vector3(0, hy, 0), Vector3.up,
+            AddFlatQuad(verts, normals, uvs, colors, tris, Vector3.up,
                         new Vector3(-hx, hy, -hz), new Vector3( hx, hy,  hz), 1f);
-            AddFlatQuad(verts, normals, uvs, colors, tris, new Vector3(0, -hy, 0), Vector3.down,
+            AddFlatQuad(verts, normals, uvs, colors, tris, Vector3.down,
                         new Vector3(-hx, -hy,  hz), new Vector3( hx, -hy, -hz), 0f);
         }
 
         static void AddFlatQuad(List<Vector3> verts, List<Vector3> normals, List<Vector2> uvs,
-                                List<Color> colors, List<int> tris, Vector3 n, Vector3 dir,
+                                List<Color> colors, List<int> tris, Vector3 dir,
                                 Vector3 c0, Vector3 c1, float gradT)
         {
             int start = verts.Count;
